@@ -3,7 +3,7 @@ import java.util.*;
 public class Info {
 	public String base;
 	public Date date;
-	public Map<String, String> rates;
+	public Map<String, Double> rates;
 	
 	public String getBase() {
 		return base;
