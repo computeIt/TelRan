@@ -1,3 +1,4 @@
+//archive information available not for all difference currencies
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -24,8 +25,7 @@ public class CurrencyRatesRestClientTestApp {
 		ResponseEntity<Info> response = restTemplate.exchange(url, 	//url - address for request
 				HttpMethod.GET, 									//method
 				request, 											//request
-				new ParameterizedTypeReference<Info>() 				//excpected type of answer
-		{	});
+				Info.class);
 		
 		String avCur = getAvailableCurrencies(response);
 		System.out.println("available currencies: " + avCur);
@@ -71,9 +71,9 @@ public class CurrencyRatesRestClientTestApp {
 					throw new IllegalArgumentException();
 				
 				url = "http://api.fixer.io/" + dateRequest + "?base=" + baseCurrency;
-				response = restTemplate.exchange(url, HttpMethod.GET, request, new ParameterizedTypeReference<Info>()	{	});
+				response = restTemplate.exchange(url, HttpMethod.GET, request, Info.class);
 				
-				double result = Double.parseDouble(response.getBody().getRates().get(destCurrency)) * quantity;
+				double result = response.getBody().getRates().get(destCurrency) * quantity;
 				
 				System.out.println(quantity + baseCurrency + " = " + result + destCurrency + " actual date " + dateFormat.format(response.getBody().getDate()));
 			}catch(Exception e){
