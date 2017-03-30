@@ -1,10 +1,6 @@
-//archive information available not for all difference currencies
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.List;
+package telran.currency.controller;
+
+import java.util.*;
 
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
@@ -13,82 +9,122 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
 
-public class CurrencyRatesRestClientTestApp {
-	static RestTemplate restTemplate = new RestTemplate();	 	
+import java.io.*;
+import java.text.SimpleDateFormat;
 
-	public static void main(String[] args) throws IOException {
-		String url = "http://api.fixer.io/latest";
-		HttpHeaders headers = new HttpHeaders();
-		headers.add("user-agent", " ");
-		
-		HttpEntity<String> request = new HttpEntity<>(headers);
-		ResponseEntity<Info> response = restTemplate.exchange(url, 	//url - address for request
-				HttpMethod.GET, 									//method
-				request, 											//request
-				Info.class);
-		
-		String avCur = getAvailableCurrencies(response);
-		System.out.println("available currencies: " + avCur);
-		SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy");
-		String dateRequest = "";
-		BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-		
-		while(true){
-			try{
-				dateRequest = "latest";
-				System.out.println("if you need archive info type Y ");
-				String choice = reader.readLine();
-				if(choice.equalsIgnoreCase("y")){
-					System.out.println("input date in format YYYY-MM-DD");
-					dateRequest = reader.readLine();					
-				}
-				
-				System.out.println("choose base currency (3 BIG letters) or type EXIT");				
-				String baseCurrency = reader.readLine();
-				if(baseCurrency.equalsIgnoreCase("exit")){
-					System.out.println("Bye!");
-					break;
-				}
-				if(!avCur.contains(baseCurrency))
-					throw new IllegalArgumentException();
-								
-				System.out.println("choose quantity of base currency or type EXIT");
-				String quan = reader.readLine();
-				if(quan.equalsIgnoreCase("exit")){
-					System.out.println("Bye!");
-					break;
-				}
-				
-				double quantity = Double.parseDouble(quan);
-				
-				System.out.println("choose destination currency (3 BIG letters) or type EXIT");
-				String destCurrency = reader.readLine();
-				if(destCurrency.equalsIgnoreCase("exit")){
-					System.out.println("Bye!");
-					break;
-				}
-				if(!avCur.contains(destCurrency))
-					throw new IllegalArgumentException();
-				
-				url = "http://api.fixer.io/" + dateRequest + "?base=" + baseCurrency;
-				response = restTemplate.exchange(url, HttpMethod.GET, request, Info.class);
-				
-				double result = response.getBody().getRates().get(destCurrency) * quantity;
-				
-				System.out.println(quantity + baseCurrency + " = " + result + destCurrency + " actual date " + dateFormat.format(response.getBody().getDate()));
-			}catch(Exception e){
-				System.out.println("something`s wrong. try again ");
-			}
+public class CurrencyControllerAppl {
+	private static final int CURRENCIES_PER_LINE = 16;
+	static String url = "http://api.fixer.io/latest";
+	static RestTemplate restTemplate = new RestTemplate();
+	static Map<String, Float> euroRates = null;
+	static Date date;
+
+	public static void main(String[] args) {
+		getRates();
+
+		if (euroRates == null) {
+			System.out.println("fixer service is unavailable");
+			return;
 		}
-		reader.close();		
+
+		try (BufferedReader console = new BufferedReader(new InputStreamReader(System.in))) {
+			while (true) {
+				printPrompt(euroRates, date);
+				String line = console.readLine();
+				if (line.equals("exit"))
+					break;
+				if (line.equalsIgnoreCase("change date")) {
+					System.out.println("input new date DD.MM.YYYY since 01.02.1999");
+					String newDate = console.readLine();//dd.mm.yyyy -> YYYY-MM-DD 
+					String archDate = getCorrectDate(newDate);
+					getArchiveRates(archDate);
+					continue;
+				}
+				printResult(line, euroRates);
+			}
+		} catch (IOException e) {
+			System.out.println("console is unavailable");
+		}
 	}
 
-	private static String getAvailableCurrencies(ResponseEntity<Info> response) {
-		List<String> list = new ArrayList<>();
-		for(String s: response.getBody().getRates().keySet()){
-			list.add(s);			
+	private static String getCorrectDate(String newDate) {//dd.mm.yyyy -> YYYY-MM-DD
+		String[] dateArr = newDate.split("\\.");
+		return dateArr[2] + "-" + dateArr[1] + "-" + dateArr[0];
+	}
+
+	private static void printResult(String line, Map<String, Float> euroRates) {
+		String tokens[] = line.split(" ");
+		if (tokens.length != 3) {
+			System.out.println("Wrong input format please see the prompt for the correct one");
+			return;
 		}
-		list.add("EUR");
-		return list.toString();
+		Float rateTo = euroRates.get(tokens[1]);
+		if (rateTo == null) {
+			System.out.println("Wrong currency 'To'");
+			return;
+		}
+		Float rateFrom = euroRates.get(tokens[0]);
+		if (rateFrom == null) {
+			System.out.println("Wrong currency 'From'");
+			return;
+		}
+		try {
+			float amount = Float.parseFloat(tokens[2]);
+			System.out.println(amount / rateFrom * rateTo);
+		} catch (NumberFormatException e) {
+			System.out.println("Wrong amount");
+		}
+	}
+
+	private static void printPrompt(Map<String, Float> euroRates, Date date) {
+		SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy");
+		System.out.println("Exchange rates based on Euro for " + dateFormat.format(date));
+		System.out.print("Currency names as follows:");
+		int ind = 0;
+		for (String currency : euroRates.keySet()) {
+			if (ind % CURRENCIES_PER_LINE == 0) {
+				System.out.println();
+			}
+			System.out.print(currency + ' ');
+			ind++;
+		}
+		System.out.println("\nenter one of the following:" + "\n   - <currency from> <currency to> <amount>"
+				+ "\n   - change date " + "\n   - exit");
+
+	}
+
+	private static void getRates() {
+		HttpHeaders headers = new HttpHeaders();
+		headers.add("user-agent", "");
+		HttpEntity<String> request = new HttpEntity<>(headers);
+		try {
+			ResponseEntity<CurrencyRates> response = restTemplate.exchange(url, HttpMethod.GET, request, CurrencyRates.class);
+			CurrencyRates res = response.getBody();
+			euroRates = res.getRates();
+			euroRates.put("EUR", 1f);
+			date = res.getDate();
+		} catch (Throwable e) {
+			System.out.println(e.getMessage());
+			euroRates = null;
+			date = null;
+		}
+	}
+	
+	private static void getArchiveRates(String archiveDate) {//archiveDate = YYYY-MM-DD
+		HttpHeaders headers = new HttpHeaders();
+		headers.add("user-agent", "");
+		url = "http://api.fixer.io/"+archiveDate;
+		HttpEntity<String> request = new HttpEntity<>(headers);
+		try {
+			ResponseEntity<CurrencyRates> response = restTemplate.exchange(url, HttpMethod.GET, request, CurrencyRates.class);
+			CurrencyRates res = response.getBody();
+			euroRates = res.getRates();
+			euroRates.put("EUR", 1f);
+			date = res.getDate();
+		} catch (Throwable e) {
+			System.out.println(e.getMessage());
+			euroRates = null;
+			date = null;
+		}
 	}
 }
